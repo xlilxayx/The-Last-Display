@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>THE LAST DISPLAY — Horror Game</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  html, body { margin:0; width:100%; height:100%; overflow:hidden; background:#050608; font-family:Arial,Helvetica,sans-serif; }
+  #game { position:fixed; inset:0; }
+  canvas { display:block; width:100%; height:100%; }
+  #hud { position:fixed; inset:0; pointer-events:none; color:#eee; text-shadow:0 2px 8px #000; }
+  #top { position:absolute; top:16px; left:16px; right:16px; display:flex; justify-content:space-between; gap:12px; align-items:flex-start; }
+  .panel { background:rgba(0,0,0,.48); border:1px solid rgba(255,255,255,.15); padding:10px 13px; border-radius:10px; backdrop-filter:blur(5px); }
+  #brand { letter-spacing:.2em; font-size:12px; color:#d7d0c8; }
+  #objective { font-size:13px; margin-top:5px; }
+  #status { font-size:12px; color:#d5b6a6; text-align:right; }
+  #message { position:absolute; left:50%; bottom:12%; transform:translateX(-50%); padding:10px 16px; border-radius:8px; background:rgba(0,0,0,.55); font-size:14px; text-align:center; max-width:85vw; opacity:0; transition:opacity .3s; }
+  #crosshair { position:absolute; left:50%; top:50%; width:5px; height:5px; background:#eee; border-radius:50%; transform:translate(-50%,-50%); opacity:.65; }
+  #start { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; padding:24px; background:radial-gradient(ellipse at center,rgba(22,24,27,.76),rgba(0,0,0,.97)); color:white; z-index:5; }
+  #card { width:min(540px,100%); border:1px solid #555; background:rgba(7,8,10,.9); padding:28px; border-radius:16px; box-shadow:0 20px 80px #000; }
+  h1 { margin:0 0 8px; font-size:clamp(32px,8vw,56px); letter-spacing:.08em; line-height:1; }
+  .sub { color:#b9aaa2; letter-spacing:.22em; font-size:11px; margin-bottom:22px; }
+  p { color:#d0d0d0; line-height:1.5; font-size:14px; }
+  #play { width:100%; border:0; padding:15px; margin-top:14px; border-radius:8px; background:#8e2525; color:white; font-weight:bold; letter-spacing:.16em; font-size:14px; }
+  #play:active { transform:scale(.99); background:#aa3030; }
+  .small { font-size:11px; color:#928c88; margin-top:14px; }
+  #mobile { display:none; position:fixed; inset:0; z-index:3; pointer-events:none; }
+  #stick { pointer-events:auto; position:absolute; left:24px; bottom:26px; width:112px; height:112px; border:1px solid #ffffff55; background:#ffffff13; border-radius:50%; }
+  #nub { position:absolute; width:44px; height:44px; left:33px; top:33px; border-radius:50%; background:#ffffff55; border:1px solid #ffffff80; }
+  #lookzone { pointer-events:auto; position:absolute; right:0; bottom:0; width:58%; height:65%; }
+  #flashBtn { pointer-events:auto; position:absolute; right:20px; bottom:25px; border:1px solid #ffffff66; background:#111b; color:white; border-radius:30px; padding:12px 16px; }
+  #scareFlash { position:fixed; inset:0; z-index:7; display:flex; align-items:center; justify-content:center; background:rgba(120,0,0,0); color:#fff; font-size:clamp(34px,10vw,100px); font-weight:900; letter-spacing:.12em; opacity:0; pointer-events:none; text-shadow:0 0 25px #f00; }
+  #ending { display:none; position:fixed; inset:0; z-index:8; background:#030303; color:white; align-items:center; justify-content:center; text-align:center; padding:25px; }
+  #ending h2 { font-size:38px; letter-spacing:.1em; }
+  @media (pointer:coarse) { #mobile { display:block; } #crosshair { opacity:.35; } }
+</style>
+</head>
+<body>
+<div id="game"></div>
+<div id="hud">
+  <div id="top">
+    <div class="panel"><div id="brand">THE LAST DISPLAY</div><div id="objective">Find the 3 security keys.</div></div>
+    <div class="panel"><div id="status">KEYS 0 / 3<br>DON'T LOOK AWAY.</div></div>
+  </div>
+  <div id="crosshair"></div>
+  <div id="message"></div>
+</div>
+<div id="mobile">
+  <div id="stick"><div id="nub"></div></div>
+  <div id="lookzone"></div>
+  <button id="flashBtn">FLASHLIGHT</button>
+</div>
+<div id="start">
+  <div id="card">
+    <div class="sub">A FIRST-PERSON MALL HORROR PROTOTYPE</div>
+    <h1>THE LAST<br>DISPLAY</h1>
+    <p>The mall closed hours ago. Find three security keys and unlock the exit. The mannequins only move when you aren't looking at them.</p>
+    <p><b>PC:</b> WASD to move · Mouse to look · F flashlight · ESC to pause<br><b>Mobile:</b> Left stick to move · Drag right side to look · Flashlight button</p>
+    <button id="play">ENTER THE MALL</button>
+    <div class="small">Headphones recommended. Keep your eyes on them.</div>
+  </div>
+</div>
+<div id="scareFlash">DON’T BLINK</div>\n<div id="ending"><div><div class="sub">THE LAST DISPLAY</div><h2 id="endTitle">YOU MADE IT OUT</h2><p id="endText">But something followed you home.</p><button id="playAgain" style="padding:13px 22px;background:#8e2525;color:white;border:0;border-radius:8px">PLAY AGAIN</button></div></div>
+<script type="module">
+import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
+
+const root = document.getElementById('game');
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x080a0d);
+scene.fog = new THREE.Fog(0x080a0d, 12, 48);
+const camera = new THREE.PerspectiveCamera(72, innerWidth/innerHeight, .1, 100);
+camera.position.set(0,1.7,12);
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.setSize(innerWidth,innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+root.appendChild(renderer.domElement);
+
+scene.add(new THREE.HemisphereLight(0x8995a8,0x171316,1.0));
+const ambient = new THREE.AmbientLight(0x9aa0aa,.22); scene.add(ambient);
+const flashlight = new THREE.SpotLight(0xffe8c7, 3.0, 24, Math.PI/7, .55, 1.2);
+flashlight.position.set(0,0,0); flashlight.target.position.set(0,0,-1);
+camera.add(flashlight); camera.add(flashlight.target); scene.add(camera);
+let flashOn=true; flashlight.visible=true;
+
+const mat=(color,rough=.85,metal=0)=>new THREE.MeshStandardMaterial({color,roughness:rough,metalness:metal});
+const floorMat=mat(0x292b2d), wallMat=mat(0x454449), ceilingMat=mat(0x202126), darkMat=mat(0x090a0c), glassMat=new THREE.MeshStandardMaterial({color:0x202d34,metalness:.55,roughness:.22});
+function box(w,h,d,m,x,y,z,cast=false,receive=true){
+ const o=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),m); o.position.set(x,y,z); o.castShadow=cast; o.receiveShadow=receive; scene.add(o); return o;
+}
+// Mall corridor
+box(34,.3,72,floorMat,0,-.18,-18,false,true);
+box(34,.3,72,ceilingMat,0,5.1,-18);
+box(.45,5.3,72,wallMat,-17,2.5,-18);
+box(.45,5.3,72,wallMat,17,2.5,-18);
+box(34,5.3,.45,wallMat,0,2.5,-54);
+box(34,5.3,.45,wallMat,0,2.5,18);
+// Shopfronts and display windows
+for(let z=-48;z<=10;z+=12){
+  box(7,3.1,.18,glassMat,-12.5,1.7,z);
+  box(7,3.1,.18,glassMat,12.5,1.7,z);
+  box(7,.18,.35,darkMat,-12.5,3.35,z);
+  box(7,.18,.35,darkMat,12.5,3.35,z);
+  box(.18,3.3,.35,wallMat,-16,1.7,z);
+  box(.18,3.3,.35,wallMat,16,1.7,z);
+}
+// ceiling lights, some dim
+for(let z=12;z>-54;z-=8){
+  const panel=box(3.3,.08,1.1,mat(0xc4c0aa,.5),0,4.88,z);
+  const light=new THREE.PointLight(0xc4d4e5, z%16===4?1.15:.55, 13);
+  light.position.set(0,4.5,z); scene.add(light);
+}
+// Store signs
+function sign(text,x,z){
+ const c=document.createElement('canvas'); c.width=512;c.height=128;
+ const ctx=c.getContext('2d');ctx.fillStyle='#17191d';ctx.fillRect(0,0,512,128);
+ ctx.fillStyle='#d0c5b7';ctx.font='bold 54px Arial';ctx.textAlign='center';ctx.fillText(text,256,82);
+ const tex=new THREE.CanvasTexture(c);const mesh=new THREE.Mesh(new THREE.PlaneGeometry(5,.95),new THREE.MeshBasicMaterial({map:tex}));
+ mesh.position.set(x,3.8,z);mesh.rotation.y=x<0?Math.PI/2:-Math.PI/2;scene.add(mesh);
+}
+sign('CLOTHING',-16.72,-8);sign('DEPARTMENT',16.72,-22);sign('TOYS',-16.72,-38);
+// Expanded mall zones: food court, restrooms and a service back room
+sign('FOOD COURT',-16.72,-17); sign('RESTROOMS',16.72,-31); sign('STAFF ONLY',0,-46);
+const tableMat=mat(0x51453d), seatMat=mat(0x292d32), tileMat=mat(0x3c3b39);
+for(const [x,z] of [[-5,-15],[0,-18],[5,-15],[-5,-22],[5,-22]]){
+  box(1.7,.12,1.25,tableMat,x,.95,z,true);
+  for(const dx of [-.62,.62])for(const dz of [-.42,.42])box(.1,.9,.1,seatMat,x+dx,.45,z+dz,true);
+  for(const dx of [-1.2,1.2])box(.48,.55,.48,seatMat,x+dx,.28,z,true);
+}
+for(let i=0;i<4;i++){
+  const x=-5.8+i*3.85;
+  box(.08,2.4,.12,wallMat,x,1.2,-29);
+  box(1.1,.08,1.1,mat(0x68645e),x,1.25,-29.7);
+  box(1.1,.08,1.1,mat(0x68645e),x,1.25,-28.3);
+}
+// service-room shelving and crates near the exit
+for(let z=-43;z>-51;z-=2.2){
+  box(3.4,.12,.5,mat(0x4b4b49),-11,1.2,z,true);
+  box(3.4,.12,.5,mat(0x4b4b49),-11,2.25,z,true);
+  box(.45,2.5,.55,mat(0x34383b),-12.5,1.25,z,true);
+  box(.45,2.5,.55,mat(0x34383b),-9.5,1.25,z,true);
+}
+for(const [x,z] of [[8,-34],[10,-34],[8,-37],[10,-37]]){
+  box(.8,.8,.8,mat(0x51402e),x,.4,z,true);
+}
+
+// Store display plinths
+for(const [x,z] of [[-11,-8],[11,-20],[-11,-35],[11,-45],[-6,-49],[6,-5]]){
+ box(1.6,.4,1.6,mat(0x77716a),x,.2,z,true);
+}
+// Exit gate at far end
+box(7,3,.3,mat(0x111416),0,1.5,-52.5);
+box(2,.12,.4,mat(0x9c2424),0,3.15,-52.25);
+const exitLight=new THREE.PointLight(0xb52222,1.4,8);exitLight.position.set(0,3.4,-51);scene.add(exitLight);
+
+// Mannequin models: blank featureless heads, torso, limbs
+function mannequin(x,z,rot=0,type="stalker"){
+ const g=new THREE.Group(); g.position.set(x,0,z);g.rotation.y=rot;
+ const skin=mat(0xb9b3a7,.5), clothes=mat(0x26282c,.8), joint=mat(0x8b877f);
+ function part(geo,m,px,py,pz){const o=new THREE.Mesh(geo,m);o.position.set(px,py,pz);o.castShadow=true;o.receiveShadow=true;g.add(o);return o;}
+ part(new THREE.CylinderGeometry(.12,.14,.18,10),joint,0,.12,0);
+ part(new THREE.CylinderGeometry(.085,.1,.72,12),skin,0,.55,0);
+ part(new THREE.SphereGeometry(.19,16,12),skin,0,1.08,0);
+ part(new THREE.CylinderGeometry(.24,.17,.58,12),clothes,0,.62,0);
+ const armGeo=new THREE.CylinderGeometry(.055,.07,.65,8);
+ const a1=part(armGeo,skin,-.29,.62,0);a1.rotation.z=-.12;
+ const a2=part(armGeo,skin,.29,.62,0);a2.rotation.z=.12;
+ const legGeo=new THREE.CylinderGeometry(.075,.09,.78,8);
+ part(legGeo,clothes,-.105,-.03,0);part(legGeo,clothes,.105,-.03,0);
+ // featureless face plate
+ const face=part(new THREE.SphereGeometry(.192,16,12),skin,0,1.08,.015);
+ g.userData={home:new THREE.Vector3(x,0,z),step:0,phase:Math.random()*10, limbs:[a1,a2], type, lastSeen:performance.now(), scareCooldown:0};
+ scene.add(g); return g;
+}
+const dolls=[
+ mannequin(-10,-12,.25,"stalker"),mannequin(8,-25,Math.PI,"sprinter"),mannequin(-7,-32,.4,"blink"),
+ mannequin(12,-43,Math.PI,"stalker"),mannequin(2,-47,Math.PI,"sprinter"),mannequin(-13,-2,0,"blink"),
+ mannequin(5,-17,Math.PI,"stalker"),mannequin(-4,-39,0,"sprinter")
+];
+const keys=[];
+function keyMesh(x,z){
+ const group=new THREE.Group();
+ const ring=new THREE.Mesh(new THREE.TorusGeometry(.18,.045,8,18),mat(0xd3a83d,.35,.7));ring.rotation.x=Math.PI/2;group.add(ring);
+ const stem=new THREE.Mesh(new THREE.BoxGeometry(.07,.42,.07),mat(0xd3a83d,.35,.7));stem.position.y=-.22;group.add(stem);
+ group.position.set(x,.9,z);scene.add(group);keys.push(group);
+}
+keyMesh(-11,-8);keyMesh(11,-20);keyMesh(-11,-35);
+const cameraDir=new THREE.Vector3(), toDoll=new THREE.Vector3(), frustum=new THREE.Frustum(), proj=new THREE.Matrix4();
+let collected=0, running=false, yaw=0, pitch=0, move={x:0,y:0}, keysDown={}, last=performance.now(), scare=0;
+const msg=document.getElementById('message');
+function say(t,ms=2200){msg.textContent=t;msg.style.opacity=1;clearTimeout(say.timer);say.timer=setTimeout(()=>msg.style.opacity=0,ms);}
+function isSeen(doll){
+ camera.getWorldDirection(cameraDir);
+ toDoll.copy(doll.position).add(new THREE.Vector3(0,1,0)).sub(camera.position);
+ const dist=toDoll.length(); if(dist>27)return false;
+ toDoll.normalize();
+ if(cameraDir.dot(toDoll)<.84)return false;
+ proj.multiplyMatrices(camera.projectionMatrix,camera.matrixWorldInverse);frustum.setFromProjectionMatrix(proj);
+ return frustum.containsPoint(doll.position.clone().add(new THREE.Vector3(0,1,0)));
+}
+function updateHud(){document.getElementById('status').innerHTML=`KEYS ${collected} / 3<br>${collected===3?'FIND THE EXIT.':'DON’T LOOK AWAY.'}`;document.getElementById('objective').textContent=collected===3?'The exit is unlocked. Get out.':'Find the 3 security keys.';}
+function collect(){
+ for(let i=keys.length-1;i>=0;i--){
+  if(keys[i].visible && keys[i].position.distanceTo(camera.position)<1.6){
+   keys[i].visible=false;collected++;tone(660,.22,.16,'sine');updateHud();say('You found a security key.');
+   if(collected===3){tone(90,1,.24,'square');say('The exit gate unlocked. Something heard that.',3500);}
+  }
+ }
+}
+function endGame(title,text){running=false;document.getElementById('endTitle').textContent=title;document.getElementById('endText').textContent=text;document.getElementById('ending').style.display='flex';}
+function movement(dt){
+ const forward=(keysDown['KeyW']||keysDown['ArrowUp']?1:0)-(keysDown['KeyS']||keysDown['ArrowDown']?1:0)-move.y;
+ const side=(keysDown['KeyD']||keysDown['ArrowRight']?1:0)-(keysDown['KeyA']||keysDown['ArrowLeft']?1:0)+move.x;
+ const speed=3.25;
+ const dir=new THREE.Vector3(side,0,-forward);
+ if(dir.lengthSq()>1)dir.normalize();
+ dir.applyAxisAngle(new THREE.Vector3(0,1,0),yaw);
+ const nx=camera.position.x+dir.x*speed*dt, nz=camera.position.z+dir.z*speed*dt;
+ camera.position.x=THREE.MathUtils.clamp(nx,-15.6,15.6);
+ camera.position.z=THREE.MathUtils.clamp(nz,-51.3,15.8);
+ camera.position.y=1.7;
+}
+// Procedural audio: no external sound files required. Audio starts after the player presses Play.
+let audioCtx=null, masterGain=null, humOsc=null, humGain=null;
+function initAudio(){
+ if(audioCtx)return;
+ audioCtx=new (window.AudioContext||window.webkitAudioContext)();
+ masterGain=audioCtx.createGain();masterGain.gain.value=.24;masterGain.connect(audioCtx.destination);
+ humOsc=audioCtx.createOscillator();humOsc.type="sine";humOsc.frequency.value=48;
+ humGain=audioCtx.createGain();humGain.gain.value=.045;humOsc.connect(humGain);humGain.connect(masterGain);humOsc.start();
+}
+function tone(freq,duration,volume=.22,wave="sawtooth"){
+ if(!audioCtx)return;
+ const o=audioCtx.createOscillator(),g=audioCtx.createGain();o.type=wave;o.frequency.setValueAtTime(freq,audioCtx.currentTime);
+ o.frequency.exponentialRampToValueAtTime(Math.max(35,freq*.45),audioCtx.currentTime+duration);
+ g.gain.setValueAtTime(volume,audioCtx.currentTime);g.gain.exponentialRampToValueAtTime(.001,audioCtx.currentTime+duration);
+ o.connect(g);g.connect(masterGain);o.start();o.stop(audioCtx.currentTime+duration);
+}
+let scareCooldown=0;
+function jumpScare(){
+ if(performance.now()<scareCooldown)return;
+ scareCooldown=performance.now()+11500;
+ const el=document.getElementById("scareFlash");
+ el.textContent=Math.random()>.5?"BEHIND YOU":"DON’T BLINK";
+ el.style.transition="none";el.style.opacity="1";el.style.background="rgba(120,0,0,.48)";
+ tone(115,.55,.38);setTimeout(()=>tone(62,.8,.3,"square"),90);
+ setTimeout(()=>{el.style.transition="opacity .65s,background .65s";el.style.opacity="0";el.style.background="rgba(0,0,0,0)";},150);
+}
+function updateDolls(dt,time){
+ for(const d of dolls){
+  const seen=isSeen(d);
+  if(seen){d.userData.lastSeen=time*1000;}
+  if(!seen){
+   const dx=camera.position.x-d.position.x,dz=camera.position.z-d.position.z;
+   const dist=Math.hypot(dx,dz);
+   if(dist>1.2 && dist<27){
+    let speed=d.userData.type==="sprinter"?(dist<9?2.25:1.25):d.userData.type==="blink"?.45:(dist<5?1.05:.68);
+    // The blink mannequin makes sudden short advances only while the flashlight is off.
+    if(d.userData.type==="blink" && !flashOn && time*1000-d.userData.lastSeen>1700){
+      d.position.x+=dx/dist*Math.min(2.4,dist-1.2);
+      d.position.z+=dz/dist*Math.min(2.4,dist-1.2);
+      d.userData.lastSeen=time*1000;
+      if(dist<8)jumpScare();
+    } else if(d.userData.type!=="blink" || flashOn){
+      d.position.x+=dx/dist*speed*dt;
+      d.position.z+=dz/dist*speed*dt;
+    }
+    d.rotation.y=Math.atan2(dx,dz);
+    if(dist<5 && d.userData.type==="sprinter")jumpScare();
+   }
+  }
+  // unsettling tiny movement only while not watched
+  if(!seen){const swing=d.userData.type==="sprinter"?.28:.08;d.userData.limbs[0].rotation.z=Math.sin(time*2.8+d.userData.phase)*swing;d.userData.limbs[1].rotation.z=-Math.sin(time*2.8+d.userData.phase)*swing;}
+  else {d.userData.limbs[0].rotation.z=0;d.userData.limbs[1].rotation.z=0;}
+  if(d.position.distanceTo(camera.position)<1.1){endGame('IT FOUND YOU','You looked away for too long.');return;}
+ }
+}
+function loop(now){
+ requestAnimationFrame(loop);if(!running){renderer.render(scene,camera);return;}
+ const dt=Math.min((now-last)/1000,.04);last=now;
+ movement(dt);collect();updateDolls(dt,now/1000);
+ // exit trigger
+ if(collected===3 && camera.position.z<-49 && Math.abs(camera.position.x)<4)endGame('YOU ESCAPED','The mall is behind you. For now.');
+ // gentle light flicker and proximity heartbeat
+ flashlight.intensity=flashOn?(2.8+Math.sin(now*.009)*.18):0;
+ if(audioCtx){let nearest=99;for(const d of dolls)nearest=Math.min(nearest,d.position.distanceTo(camera.position));humGain.gain.setTargetAtTime(nearest<7?.095:.045,audioCtx.currentTime,.35);}
+
+ for(const k of keys)if(k.visible)k.rotation.y+=dt*1.2;
+ renderer.render(scene,camera);
+}
+requestAnimationFrame(loop);
+
+function start(){
+ initAudio(); if(audioCtx.state==='suspended')audioCtx.resume();
+ document.getElementById('start').style.display='none';running=true;last=performance.now();
+ if(matchMedia('(pointer:fine)').matches && renderer.domElement.requestPointerLock)renderer.domElement.requestPointerLock();
+ say('The mall is closed. Find the keys.',2800);
+}
+document.getElementById('play').onclick=start;
+document.getElementById('playAgain').onclick=()=>location.reload();
+document.addEventListener('keydown',e=>{keysDown[e.code]=true;if(e.code==='KeyF'){flashOn=!flashOn;flashlight.visible=flashOn;}});
+document.addEventListener('keyup',e=>keysDown[e.code]=false);
+document.addEventListener('mousemove',e=>{if(document.pointerLockElement===renderer.domElement && running){yaw-=e.movementX*.0022;pitch-=e.movementY*.0018;pitch=THREE.MathUtils.clamp(pitch,-1.1,1.1);camera.rotation.order='YXZ';camera.rotation.set(pitch,yaw,0);}});
+document.addEventListener('pointerlockchange',()=>{});
+document.getElementById('flashBtn').onclick=()=>{flashOn=!flashOn;flashlight.visible=flashOn;};
+const stick=document.getElementById('stick'),nub=document.getElementById('nub');let stickId=null,stickRect;
+stick.addEventListener('pointerdown',e=>{stickId=e.pointerId;stick.setPointerCapture(stickId);stickRect=stick.getBoundingClientRect();});
+stick.addEventListener('pointermove',e=>{if(e.pointerId!==stickId)return;const cx=stickRect.left+stickRect.width/2,cy=stickRect.top+stickRect.height/2;let dx=e.clientX-cx,dy=e.clientY-cy;const len=Math.hypot(dx,dy),max=34;if(len>max){dx=dx/len*max;dy=dy/len*max;}nub.style.transform=`translate(${dx}px,${dy}px)`;move.x=dx/max;move.y=dy/max;});
+function releaseStick(e){if(e.pointerId===stickId){stickId=null;move={x:0,y:0};nub.style.transform='translate(0,0)';}}
+stick.addEventListener('pointerup',releaseStick);stick.addEventListener('pointercancel',releaseStick);
+const look=document.getElementById('lookzone');let lookId=null,lx=0,ly=0;
+look.addEventListener('pointerdown',e=>{lookId=e.pointerId;lx=e.clientX;ly=e.clientY;look.setPointerCapture(lookId);});
+look.addEventListener('pointermove',e=>{if(e.pointerId!==lookId)return;const dx=e.clientX-lx,dy=e.clientY-ly;lx=e.clientX;ly=e.clientY;yaw-=dx*.006;pitch=THREE.MathUtils.clamp(pitch-dy*.005,-1.1,1.1);camera.rotation.order='YXZ';camera.rotation.set(pitch,yaw,0);});
+look.addEventListener('pointerup',()=>lookId=null);look.addEventListener('pointercancel',()=>lookId=null);
+addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);});
+</script>
+</body>
+</html>
